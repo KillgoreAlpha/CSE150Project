@@ -96,9 +96,9 @@ public class Communicator {
 	private Lock lock = new Lock();
 
 	// declare condition variable for listeners here
-	private Conditionion listenReady;
+	private Condition listenReady;
 
 	// declare condition variable for speakers here
-	private Conditionn speakReady;
+	private Condition speakReady;
 	
 }
