@@ -415,6 +415,12 @@ public class KThread {
 
 		new KThread(new PingTest(1)).setName("forked thread").fork();
 		new PingTest(0).run();
+		// CommSelfTester.selfTest1();
+		// CommSelfTester.selfTest2();
+		// CommSelfTester.selfTest3();
+		// CommSelfTester.selfTest4();
+		CommSelfTester.selfTest5();
+
 	}
 
 	private static final char dbgThread = 't';

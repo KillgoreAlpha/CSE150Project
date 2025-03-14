@@ -1,7 +1,5 @@
 package nachos.threads;
 
-import java.util.concurrent.locks.Condition;
-
 import nachos.machine.*;
 
 /**
@@ -37,7 +35,7 @@ public class Communicator {
 		while (wordToBeHeard) {
 			
 		// your code here
-			speakReady.wait(lock);
+			speakReady.sleep();
 
 		} 
 		
@@ -47,7 +45,7 @@ public class Communicator {
 		wordToBeHeard = true;
 		
 		// your code here
-		listenReady.signal();
+		listenReady.wake();
 		
 		lock.release();
 		
@@ -67,7 +65,7 @@ public class Communicator {
 		while (!wordToBeHeard) {
 			
 		// your code here
-			listenReady.wait(lock);
+			listenReady.sleep();
 		} 
 
 		
@@ -78,7 +76,7 @@ public class Communicator {
 		
 		
 		// your code here
-		speakReady.signal();
+		speakReady.wake();
 
 
 		lock.release();
@@ -96,9 +94,9 @@ public class Communicator {
 	private Lock lock = new Lock();
 
 	// declare condition variable for listeners here
-	private Condition listenReady;
+	private Condition listenReady = new Condition(lock);
 
 	// declare condition variable for speakers here
-	private Condition speakReady;
+	private Condition speakReady = new Condition(lock);
 	
 }
