@@ -193,17 +193,32 @@ public class KThread {
 	 */
 	public static void finish() {
 		Lib.debug(dbgThread, "Finishing thread: " + currentThread.toString());
-
-		Machine.interrupt().disable();
-
+ 
+		Machine.interrupt().disable(); // should I enable interrupts after???
+ 
 		Machine.autoGrader().finishingCurrentThread();
-
+ 
 		Lib.assertTrue(toBeDestroyed == null);
 		toBeDestroyed = currentThread;
-
+ 
 		currentThread.status = statusFinished;
+	   
+		//pseudo code:
+ 
+		//Check if there is a thread recorded in our "joins" class.
+		//If there is, wake it up (put it in the ready queue?)
+		//If there isn't, do nothing.
+ 
+		if(currentThread.joins != null){
+		 //Should I make the threads status ready so that when ready() is ran it passes?
+		 currentThread.joins.ready();
+		 currentThread.joins = null;  //We need to make sure that it resets
 
-		sleep();
+		}
+ 
+		//------------
+ 
+		sleep(); // after destruction it takes care of it right?
 	}
 
 	/**
@@ -282,8 +297,25 @@ public class KThread {
 	 */
 	public void join() {
 		Lib.debug(dbgThread, "Joining to thread: " + toString());
+		
+		//pseudo code:
 
-		Lib.assertTrue(this != currentThread);
+		//Should I disable interrupts or an equivalent to ensure this never is undefined behavior?
+		Lib.assertTrue(this != currentThread, "ERROR: Threads may not join themselves."); // this is a thread can't join itself check
+
+		if(this.status == statusFinished){ //This is us checking if the thread we are trying to join is already finished. "this" refers to the thread we are trying to join.
+		 //do i put it in the ready queue? the instructions say "B returns immediately from join without waiting if A has already finished."
+		 //If i disabled interrupts I should enable them before I return.
+		 return;
+		}
+
+		Lib.assertTrue(this.joins == null, "ERROR: Another thread has already tried to join this thread."); //This will return an error and stop the rest from happening
+
+		this.joins = currentThread; //record whos trying to join in the thread we are trying to join's "joins" variable
+		// Do i make the thread who is waiting status=blocked?
+		currentThread.sleep(); //put the current thread to sleep, is this the correct operation to make the thread wait inside of KThread.join()?
+		//I would want to enable interrupts if they were disabled
+		//------------
 
 	}
 
@@ -465,4 +497,6 @@ public class KThread {
 	private static KThread toBeDestroyed = null;
 
 	private static KThread idleThread = null;
+
+	private KThread joins = null; // This allows each thread to check if joins is null or a KThread.
 }
