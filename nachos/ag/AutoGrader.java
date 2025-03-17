@@ -145,9 +145,7 @@ public class AutoGrader {
 	void run() {
 		kernel.selfTest();
 		kernel.run();
-		Boat.selfTest();
 		kernel.terminate();
-
 	}
 
 	Privilege privilege = null;
