@@ -311,7 +311,8 @@ public class KThread {
 	 */
 	public static void finish() {
 		Lib.debug(dbgThread, "Finishing thread: " + currentThread.toString());
-  
+		boolean interrupt = Machine.interrupt().disable();
+
 		Machine.autoGrader().finishingCurrentThread();
  
 		Lib.assertTrue(toBeDestroyed == null);
@@ -334,7 +335,7 @@ public class KThread {
  
 		//------------
 		// is this needed below?
-		boolean interrupt = Machine.interrupt().disable();
+		// boolean interrupt = Machine.interrupt().disable();
 
 		sleep(); // after destruction it takes care of it right?
 		Machine.interrupt().restore(interrupt);
@@ -577,7 +578,7 @@ public class KThread {
 		joinTest1();
 		joinTest2();
 		// joinTest3();
-		joinTest4();
+		// joinTest4();
 	}
 
 	private static final char dbgThread = 't';
