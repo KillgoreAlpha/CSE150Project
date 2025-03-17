@@ -9,9 +9,9 @@ public class Boat {
 	static int childrenInOahu;
 	static int adultsInOahu;
 	static Lock lock;
-	static Condition oahuCv;	// Wakes those on Oahu when the boat arrives there
-	static Condition molokaiCv; // Wakes those on Molokai when the boat arrives there
-	static Condition boatCv; 	// Wakes children on a boat when ready to ride
+	static Condition2 oahuCv;	// Wakes those on Oahu when the boat arrives there
+	static Condition2 molokaiCv; // Wakes those on Molokai when the boat arrives there
+	static Condition2 boatCv; 	// Wakes children on a boat when ready to ride
 	static int[] onBoat;
 
 	public static boolean boatEmpty(){
@@ -44,9 +44,9 @@ public class Boat {
 		done = false;
 		boatOnOahu = true;
 		lock = new Lock();
-		oahuCv = new Condition(lock);
-		molokaiCv  = new Condition(lock);
-		boatCv = new Condition(lock);
+		oahuCv = new Condition2(lock);
+		molokaiCv  = new Condition2(lock);
+		boatCv = new Condition2(lock);
 		onBoat = new int[]{0, 0};
 		childrenInOahu = children;
 		adultsInOahu = adults;
