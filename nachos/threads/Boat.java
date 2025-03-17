@@ -25,11 +25,11 @@ public class Boat {
 	public static void selfTest() {
 		BoatGrader b = new BoatGrader();
 
-		System.out.println("\n ***Testing Boats with only 2 children***");
-		begin(0, 2, b);
+		// System.out.println("\n ***Testing Boats with only 2 children***");
+		// begin(0, 3, b);
 
-		// System.out.println("\n ***Testing Boats with 2 children, 1 adult***");
-		// begin(1, 2, b);
+		System.out.println("\n ***Testing Boats with 2 children, 1 adult***");
+		begin(1, 2, b);
 
 		// System.out.println("\n ***Testing Boats with 3 children, 3 adults***");
 		// begin(3, 3, b);
@@ -52,6 +52,7 @@ public class Boat {
 		adultsInOahu = adults;
 
 
+
 		// Create threads here. See section 3.4 of the Nachos for Java
 		// Walkthrough linked from the projects page.
 		for(int i = 0; i < children; i++){
@@ -69,6 +70,12 @@ public class Boat {
 			t.setName("Adult " + i);
 			t.fork();
 		}
+
+		// Ensures the code is not ended prematurely by yielding the main thread
+		// Until execution is done
+		while(!done){
+			KThread.yield();
+		}
 	}
 
 	static void AdultItinerary() {
@@ -84,35 +91,37 @@ public class Boat {
 				KThread.finish(); // Adults on Molokai have nothing to do.
 
 			lock.acquire();
-			// Sleeps if the boat isn’t in oahu, the boat can’t fit an adult, or if there are 2
-			// children in oahu and an adult shouldn’t board.
+			// Sleeps if the boat isn't in oahu, the boat can’t fit an adult, or if there are 2
+			// children in oahu and an adult shouldn't board.
 			if (!boatOnOahu || !boatEmpty() || childrenInOahu > 1) {
 				oahuCv.sleep();
 			} else {
-				boardAdult(onOahu);
+				onOahu = boardAdult(onOahu);
 			}
 
 			lock.release();
 		}
 	}
 
-	static void boardAdult(boolean onOahu){
+	static boolean boardAdult(boolean onOahu){
 		onBoat[1] ++;
 		// Check the location to figure out which one to use
 		if(onOahu) {
-			bg.AdultRideToMolokai();
+			bg.AdultRowToMolokai();
 		} else {
-			bg.AdultRideToOahu();
+			bg.AdultRowToOahu();
 		}
 
 		transportBoat(0, 1, onOahu);
-		// once an adult arrives in Molokai, they have nothing to do. If they came from Oahu, they are now in Molokai.
-		if(onOahu) KThread.finish();
+
+		return !onOahu;
 	}
 
 	static void ChildItinerary() {
 		boolean onOahu = true;
 		while(true) {
+			// System.out.println(done);
+			// System.out.println(childrenInOahu);
 			if (done) KThread.finish();
 			lock.acquire();
 
@@ -125,14 +134,13 @@ public class Boat {
 				}
 			}
 			else {
-				if (!boatOnOahu || !boatFitsChild())
+				if (adultsInOahu != 0 && childrenInOahu == 1 || !boatOnOahu || !boatFitsChild())
 					oahuCv.sleep();
 				else {
 					// Two children have to board from Oahu, unless there is only one
 					// child left, in which case this child doesn’t wait for another.
 
-					boardChild(onOahu, childrenInOahu > 1);
-					done = true;
+					onOahu = boardChild(onOahu, childrenInOahu > 1);
 				}
 			}
 
@@ -142,16 +150,17 @@ public class Boat {
 	}
 
 	static boolean boardChild(boolean onOahu, boolean waitForAnother){
-		onBoat[0] ++;
+		boolean empty = boatEmpty();
+		onBoat[0]++;
 
 		// Waits for a second rider if necessary
 		// The first child to board would be the rider, not the pilot
 		// This cv is only for these two children. We don’t want to wake other islanders who are
 		// only waiting for the boat to return and for them to board.
-		if(boatEmpty() && waitForAnother) {
+		if(empty && waitForAnother) {
+			// System.out.println("Sleeping B");
 			boatCv.sleep();
 			// We can check which one to use based on the current location of the children
-			// (not shown)
 			if(onOahu){
 				bg.ChildRideToMolokai();
 			} else {
@@ -159,21 +168,25 @@ public class Boat {
 			}
 			// We have to call this here, otherwise we cannot guarantee transportBoat will be
 			// called before the other child reacquires the lock.
+			// System.out.println("Boat transported to Oahu?, " + !onOahu);
 			transportBoat(2, 0, onOahu);
 		} else {
 			if(onOahu){
-				bg.ChildRideToMolokai();
+				bg.ChildRowToMolokai();
 			} else {
-				bg.ChildRideToOahu();
+				bg.ChildRowToOahu();
 			}
 
 			boatCv.wake();
+			// System.out.println("Wake B");
 
 			if(waitForAnother) {
 				// If we are taking two riders, we simply let the other rider call transportBoat and
 				// relinquish control.
 				if(onOahu) {
+					// System.out.println("Sleeping M");
 					molokaiCv.sleep();
+					// System.out.println("Wake M");
 				} else{
 					oahuCv.sleep();
 				}
@@ -190,15 +203,16 @@ public class Boat {
 
 	static void transportBoat(int children, int adults, boolean onOahu){
 		boolean onOahuNew = !onOahu;
+		onBoat[0] = 0;
+		onBoat[1] = 0;
+		boatOnOahu = !boatOnOahu;
 		if(onOahuNew){
 			childrenInOahu += children;
 			adultsInOahu += adults;
-			boatOnOahu = !boatOnOahu;
 			oahuCv.wakeAll();
 		} else{
 			childrenInOahu -= children;
 			adultsInOahu -= adults;
-			boatOnOahu = !boatOnOahu;
 			molokaiCv.wakeAll();
 		}
 	}
