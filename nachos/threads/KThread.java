@@ -311,7 +311,7 @@ public class KThread {
 	 */
 	public static void finish() {
 		Lib.debug(dbgThread, "Finishing thread: " + currentThread.toString());
-		boolean interrupt = Machine.interrupt().disable();
+		Machine.interrupt().disable();
 
 		Machine.autoGrader().finishingCurrentThread();
  
@@ -338,7 +338,6 @@ public class KThread {
 		// boolean interrupt = Machine.interrupt().disable();
 
 		sleep(); // after destruction it takes care of it right?
-		Machine.interrupt().restore(interrupt);
 
 	}
 
