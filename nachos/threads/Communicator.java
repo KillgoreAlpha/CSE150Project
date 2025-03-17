@@ -94,9 +94,9 @@ public class Communicator {
 	private Lock lock = new Lock();
 
 	// declare condition variable for listeners here
-	private Condition listenReady = new Condition(lock);
+	private Condition2 listenReady = new Condition2(lock);
 
 	// declare condition variable for speakers here
-	private Condition speakReady = new Condition(lock);
+	private Condition2 speakReady = new Condition2(lock);
 	
 }
