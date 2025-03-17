@@ -139,6 +139,124 @@ public class KThread {
 			return 0;
 	}
 
+	// Self Test Code:
+	private static void joinTest1 () {
+		KThread child1 = new KThread( new Runnable () {
+			public void run() {
+				System.out.println("I (heart) Nachos!");
+			}
+			});
+		child1.setName("child1").fork();
+	
+		// We want the child to finish before we call join.  Although
+		// our solutions to the problems cannot busy wait, our test
+		// programs can!
+	
+		for (int i = 0; i < 5; i++) {
+			System.out.println ("busy...");
+			KThread.currentThread().yield();
+		}
+	
+		child1.join();
+		System.out.println("After joining, child1 should be finished.");
+		System.out.println("is it? " + (child1.status == statusFinished));
+		Lib.assertTrue((child1.status == statusFinished), " Expected child1 to be finished.");
+		}
+
+	public static void joinTest2() {
+
+		Lib.debug(dbgThread, "Enter KThread.selfTest");
+		/**
+		 * Allocate a new thread setting the target to point to a 
+		 * PingTest object whose run method will be called when the 
+		 * newly created thread executes. 
+		 */
+		KThread th1 = new KThread(new PingTest(1));
+		/**
+		 * Set the name of the new thread to "forked thread 1" 
+		 */
+		th1.setName("forked thread 1");
+		/**
+		 * Execute fork() to begin execution of the new thread 
+		 * (putting it in the ready queue). This new thread will 
+		 * eventually execute the PingTest object's run() method when
+		 * scheduled. The current thread (that created this new thread) 
+		 * will return from the fork() method call resuming its own 
+		 * execution, thus, giving us 2 concurrent thread.
+		 */
+		th1.fork();
+		/**
+		 * The current thread that returned from fork() (creating the 
+		 * new thread th1 above) will then create its own PingTest 
+		 * object and execute the run method. So now we have two 
+		 * threads running the PingTest's run() method.
+		 */
+		new PingTest(0).run2();
+		/**
+		 * Current thread calls join() on the newly created thread 
+		 * thus going to sleep till th1 finishes.
+		 */
+		th1.join(); 
+		/**
+		 * Try to join with th1 again. This should immediately return
+		 * as th1 should have already finished.
+		 */
+		th1.join();
+	}
+
+	public static void joinTest3() {
+		System.out.println("joinTest3: A thread calling join() on itself should cause an assertion error.");
+	
+		KThread self = KThread.currentThread();
+		System.out.println("joinTest3: Current thread (" + self.getName() + ") is about to call join() on itself...");
+		self.join(); // This should trigger an assertion error in join().
+		
+		System.out.println("joinTest3 ERROR: Should never reach here if the assertion is working properly.");
+	}
+
+	public static void joinTest4() {
+		System.out.println("joinTest4: Two separate threads will attempt to join the same target; " +
+						   "the second attempt should produce an error assertion.");
+	
+		// This child will take a little time so that both joiner threads
+		// have a chance to attempt to join
+		KThread child = new KThread(new Runnable() {
+			public void run() {
+				System.out.println("joinTest4 (child): Starting and yielding a few times...");
+				for (int i = 0; i < 5; i++) {
+					KThread.yield();
+				}
+				System.out.println("joinTest4 (child): Finishing now...");
+			}
+		}).setName("child");
+		child.fork();
+	
+		// First "joiner" thread
+		KThread joiner1 = new KThread(new Runnable() {
+			public void run() {
+				System.out.println("joinTest4 (joiner1): Attempting child.join()...");
+				child.join();
+				System.out.println("joinTest4 (joiner1): child.join() returned normally.");
+			}
+		}).setName("joiner1");
+		joiner1.fork();
+	
+		// Give joiner1 a moment to call join
+		KThread.yield();
+	
+		// Second "joiner" thread (which will trigger an assertion error)
+		KThread joiner2 = new KThread(new Runnable() {
+			public void run() {
+				System.out.println("joinTest4 (joiner2): Attempting child.join(), expect an error");
+				child.join();  // This should fail if your code enforces only one join per target.
+				System.out.println("joinTest4 (joiner2): ERROR - We should never see this message if assertion works correctly.");
+			}
+		}).setName("joiner2");
+		joiner2.fork();
+	}
+		
+	
+
 	/**
 	 * Causes this thread to begin execution. The result is that two threads are
 	 * running concurrently: the current thread (which returns from the call to
@@ -193,17 +311,34 @@ public class KThread {
 	 */
 	public static void finish() {
 		Lib.debug(dbgThread, "Finishing thread: " + currentThread.toString());
-
 		Machine.interrupt().disable();
 
 		Machine.autoGrader().finishingCurrentThread();
-
+ 
 		Lib.assertTrue(toBeDestroyed == null);
 		toBeDestroyed = currentThread;
-
+ 
 		currentThread.status = statusFinished;
+	   
+		//pseudo code:
+ 
+		//Check if there is a thread recorded in our "joins" class.
+		//If there is, wake it up (put it in the ready queue?)
+		//If there isn't, do nothing.
+ 
+		if(currentThread.joinCond != null){
 
-		sleep();
+			joinLock.acquire();
+			currentThread.joinCond.wake();  // This is our ability to wake up the thread that tried to join us.
+			joinLock.release();
+		}
+ 
+		//------------
+		// is this needed below?
+		// boolean interrupt = Machine.interrupt().disable();
+
+		sleep(); // after destruction it takes care of it right?
+
 	}
 
 	/**
@@ -282,8 +417,25 @@ public class KThread {
 	 */
 	public void join() {
 		Lib.debug(dbgThread, "Joining to thread: " + toString());
+		Lib.assertTrue(this != currentThread, "ERROR: Threads may not join themselves."); // this is a thread can't join itself check
+// obtaining the lock prevents 2 threads from attempting to join at the same time. I mean they can both run join but they will be forced to do so atomically.
+		joinLock.acquire();
+		// boolean interupts = Machine.interrupt().disable();
+		if(this.status == statusFinished){ //This is us checking if the thread we are trying to join is already finished. "this" refers to the thread we are trying to join.
+			//do i put it in the ready queue? the instructions say "B returns immediately from join without waiting if A has already finished."
+			//If i disabled interrupts I should enable them before I return.
+			joinLock.release();
+			// Machine.interrupt().restore(interupts);
+			return;
+		}
 
-		Lib.assertTrue(this != currentThread);
+		Lib.assertTrue(this.joinCond == null, "ERROR: Another thread has already tried to join this thread."); //This will return an error and stop the rest from happening
+
+		this.joinCond = new Condition2(joinLock); //record whos trying to join in the thread we are trying to join's "joins" variable
+		// Do i make the thread who is waiting status=blocked? No sleep does that for me.
+		this.joinCond.sleep(); //put the current thread to sleep, is this the correct operation to make the thread wait inside of KThread.join()?
+		joinLock.release();
+		//------------
 
 	}
 
@@ -403,6 +555,13 @@ public class KThread {
 				currentThread.yield();
 			}
 		}
+		public void run2() {
+			for (int i = 0; i < 50; i++) {
+				System.out.println("*** the thread " + which + " looped " + i
+						+ " times");
+				currentThread.yield();
+			}
+		}
 
 		private int which;
 	}
@@ -415,6 +574,10 @@ public class KThread {
 
 		new KThread(new PingTest(1)).setName("forked thread").fork();
 		new PingTest(0).run();
+		joinTest1();
+		joinTest2();
+		// joinTest3();
+		// joinTest4();
 	}
 
 	private static final char dbgThread = 't';
@@ -465,4 +628,12 @@ public class KThread {
 	private static KThread toBeDestroyed = null;
 
 	private static KThread idleThread = null;
+
+	// private KThread joins = null; // This allows each thread to check if joins is null or a KThread.
+
+
+	// Condition Implementation (CHANGE FOR CONDITION 2)
+	private static Lock joinLock = new Lock();
+	private Condition2 joinCond = null;
+
 }
