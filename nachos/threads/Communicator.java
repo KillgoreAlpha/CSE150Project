@@ -46,6 +46,9 @@ public class Communicator {
 		
 		// your code here
 		listenReady.wake();
+
+		// Wait for a listener to return from speak()
+		waitForListener.sleep();
 		
 		lock.release();
 		
@@ -77,7 +80,7 @@ public class Communicator {
 		
 		// your code here
 		speakReady.wake();
-
+		waitForListener.wake();
 
 		lock.release();
 		
@@ -98,5 +101,7 @@ public class Communicator {
 
 	// declare condition variable for speakers here
 	private Condition2 speakReady = new Condition2(lock);
+
+	private Condition2 waitForListener = new Condition2(lock);
 	
 }
