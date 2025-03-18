@@ -56,7 +56,9 @@ public class Boat {
 		// Create threads here. See section 3.4 of the Nachos for Java
 		// Walkthrough linked from the projects page.
 		for(int i = 0; i < children; i++){
-			Runnable r = Boat::ChildItinerary;
+			Runnable r = new Runnable() {
+				public void run() { ChildItinerary(); }
+			};
 
 			KThread t = new KThread(r);
 			t.setName("Child " + i);
@@ -64,7 +66,9 @@ public class Boat {
 		}
 
 		for(int i = 0; i < adults; i++){
-			Runnable r = Boat::AdultItinerary;
+			Runnable r = new Runnable() {
+				public void run() { AdultItinerary(); }
+			};
 
 			KThread t = new KThread(r);
 			t.setName("Adult " + i);
