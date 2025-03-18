@@ -23,7 +23,7 @@ public class Alarm {
 			}
 		});
 		
-		waitQueue = new PriorityQueue<WaitingThread>(new WaitTimeComparator());
+		waitQueue = new java.util.TreeSet(new WaitTimeComparator());
 	}
 
 	/**
@@ -38,8 +38,8 @@ public class Alarm {
 		long currentTime = Machine.timer().getTime();
 		
 		// Check if any threads need to be woken up
-		while (!waitQueue.isEmpty() && waitQueue.peek().wakeTime <= currentTime) {
-			WaitingThread thread = waitQueue.poll();
+		while (!waitQueue.isEmpty() && ((WaitingThread)waitQueue.first()).wakeTime <= currentTime) {
+			WaitingThread thread = (WaitingThread)waitQueue.first(); waitQueue.remove(thread);
 			thread.thread.ready();
 		}
 		
@@ -108,5 +108,5 @@ public class Alarm {
 	}
 	
 	// Queue of threads waiting to be awakened, sorted by wake time
-	private PriorityQueue<WaitingThread> waitQueue;
+	private java.util.TreeSet waitQueue;
 }

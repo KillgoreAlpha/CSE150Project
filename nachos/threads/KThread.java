@@ -220,7 +220,7 @@ public class KThread {
 	
 		// This child will take a little time so that both joiner threads
 		// have a chance to attempt to join
-		KThread child = new KThread(new Runnable() {
+		final KThread child = new KThread(new Runnable() {
 			public void run() {
 				System.out.println("joinTest4 (child): Starting and yielding a few times...");
 				for (int i = 0; i < 5; i++) {
