@@ -6,6 +6,8 @@ import nachos.userprog.*;
 import nachos.vm.*;
 
 import java.io.EOFException;
+import java.util.HashMap;
+import java.util.LinkedList;
 
 /**
  * Encapsulates the state of a user process that is not contained in its user
@@ -28,6 +30,22 @@ public class UserProcess {
 		pageTable = new TranslationEntry[numPhysPages];
 		for (int i = 0; i < numPhysPages; i++)
 			pageTable[i] = new TranslationEntry(i, i, true, false, false, false);
+		
+		// Initialize process ID (thread-safe)
+		processIDLock.acquire();
+		processID = nextProcessID++;
+		processIDLock.release();
+		// Project 2 Task 1: Initialize OpenFiles array
+		myFileSlots = new OpenFile[16];
+		// Project 2 Task 1: Initialize stdin/stdout slots in OpenFiles array
+		// File descriptor 0 refers to keyboard input (UNIX stdin)
+		myFileSlots[0] = UserKernel.console.openForReading();
+		// File descriptor 1 refers to display output (UNIX stdout)
+		myFileSlots[1] = UserKernel.console.openForWriting();
+		
+		// Initialize child process tracking
+		childProcesses = new HashMap<Integer, UserProcess>();
+		childExitStatus = new HashMap<Integer, Integer>();
 	}
 
 	/**
@@ -65,6 +83,11 @@ public class UserProcess {
 	public boolean execute(String name, String[] args) {
 		if (!load(name, args))
 			return false;
+			
+		// Increment process count
+		UserKernel.numProcessesLock.acquire();
+		UserKernel.numProcesses++;
+		UserKernel.numProcessesLock.release();
 
 		thread = new UThread(this);
 		thread.setName(name).fork();
@@ -320,9 +343,8 @@ public class UserProcess {
 
 	/**
 	 * Release any resources allocated by <tt>loadSections()</tt>.
+	 * Implementation is at line 688.
 	 */
-	protected void unloadSections() {
-	}
 
 	/**
 	 * Initialize the processor's registers in preparation for running the
@@ -351,6 +373,10 @@ public class UserProcess {
 	 * Handle the halt() system call.
 	 */
 	private int handleHalt() {
+		// Only the root process (PID 0) should be allowed to halt the machine
+		if (processID != 0) {
+			return 0;
+		}
 
 		Machine.halt();
 
@@ -368,10 +394,162 @@ public class UserProcess {
 		// can grade your implementation.
 
 		Lib.debug(dbgProcess, "UserProcess.handleExit (" + status + ")");
-		// for now, unconditionally terminate with just one process
-		Kernel.kernel.terminate();
+		for (int i = 0; i < myFileSlots.length; i++) {
+			if (myFileSlots[i] != null) {
+				myFileSlots[i].close();
+				myFileSlots[i] = null;
+			}
+		}
+		
+		// Update exit status for parent process
+		if (parent != null) {
+			parent.childLock.acquire();
+			parent.childExitStatus.put(processID, status);
+			parent.joinCondition.wakeAll();
+			parent.childLock.release();
+		}
+		
+		// Mark this process as exited
+		exited = true;
+
+		// Unload the program from memory
+		unloadSections();
+		
+		// Set the current thread to finish
+		if (thread != null)
+			thread.finish();
+			
+		// Check if this is the last process, if so terminate the machine
+		UserKernel.numProcessesLock.acquire();
+		UserKernel.numProcesses--;
+		boolean lastProcess = (UserKernel.numProcesses == 0);
+		UserKernel.numProcessesLock.release();
+		
+		if (lastProcess)
+			Kernel.kernel.terminate();
 
 		return 0;
+	}
+	
+	/**
+	 * Handle the exec() system call.
+	 */
+	private int handleExec(int fileNameVAddr, int argc, int argvVAddr) {
+		// Check arguments
+		if (fileNameVAddr == 0 || argc < 0 || (argc > 0 && argvVAddr == 0))
+			return -1;
+		
+		// Read file name
+		String fileName = readVirtualMemoryString(fileNameVAddr, 256);
+		if (fileName == null)
+			return -1;
+		
+		// Make sure the program file ends with .coff
+		if (!fileName.endsWith(".coff"))
+			fileName += ".coff";
+		
+		// Read arguments
+		String[] args = new String[argc];
+		byte[] buffer = new byte[4 * argc];
+		
+		int bytesRead = readVirtualMemory(argvVAddr, buffer);
+		if (bytesRead != 4 * argc)
+			return -1;
+		
+		for (int i = 0; i < argc; i++) {
+			int argPointer = Lib.bytesToInt(buffer, i * 4);
+			args[i] = readVirtualMemoryString(argPointer, 256);
+			if (args[i] == null)
+				return -1;
+		}
+		
+		// Create new child process
+		UserProcess child = UserProcess.newUserProcess();
+		
+		// Set parent-child relationship
+		child.parent = this;
+		
+		// Add child to parent's tracking
+		childLock.acquire();
+		childProcesses.put(child.processID, child);
+		childLock.release();
+		
+		// Execute the program in the child process
+		if (!child.execute(fileName, args)) {
+			// Failed to execute, remove from child list
+			childLock.acquire();
+			childProcesses.remove(child.processID);
+			childLock.release();
+			return -1;
+		}
+		
+		// Return the child's process ID
+		return child.processID;
+	}
+	
+	/**
+	 * Handle the join() system call.
+	 */
+	private int handleJoin(int processID, int statusVAddr) {
+		// Validate arguments
+		if (statusVAddr < 0)
+			return -1;
+		
+		// Check if the process is a child of this process
+		childLock.acquire();
+		
+		UserProcess child = childProcesses.get(processID);
+		if (child == null) {
+			childLock.release();
+			return -1;  // Not a child of this process
+		}
+		
+		// If we already have an exit status, the child has already exited
+		if (childExitStatus.containsKey(processID)) {
+			// Get the exit status
+			int status = childExitStatus.get(processID);
+			
+			// Write status to the provided address
+			byte[] statusBytes = Lib.bytesFromInt(status);
+			int bytesWritten = writeVirtualMemory(statusVAddr, statusBytes);
+			
+			// Remove the child from our maps
+			childProcesses.remove(processID);
+			childExitStatus.remove(processID);
+			
+			childLock.release();
+			
+			// Return 1 for normal exit
+			return 1;
+		}
+		
+		// Child is still running, wait for it to exit
+		while (!childExitStatus.containsKey(processID) && !child.exited) {
+			joinCondition.sleep();
+		}
+		
+		// Check if the child exited abnormally
+		if (!childExitStatus.containsKey(processID)) {
+			childProcesses.remove(processID);
+			childLock.release();
+			return 0;  // Abnormal exit
+		}
+		
+		// Get the exit status
+		int status = childExitStatus.get(processID);
+		
+		// Write status to the provided address
+		byte[] statusBytes = Lib.bytesFromInt(status);
+		int bytesWritten = writeVirtualMemory(statusVAddr, statusBytes);
+		
+		// Remove the child from our maps
+		childProcesses.remove(processID);
+		childExitStatus.remove(processID);
+		
+		childLock.release();
+		
+		// Return 1 for normal exit
+		return 1;
 	}
 
 	private static final int syscallHalt = 0, syscallExit = 1, syscallExec = 2,
@@ -446,6 +624,10 @@ public class UserProcess {
 			return handleHalt();
 		case syscallExit:
 			return handleExit(a0);
+		case syscallExec:
+			return handleExec(a0, a1, a2);
+		case syscallJoin:
+			return handleJoin(a0, a1);
 
 		default:
 			Lib.debug(dbgProcess, "Unknown syscall " + syscall);
@@ -498,10 +680,55 @@ public class UserProcess {
         protected UThread thread;
     
 	private int initialPC, initialSP;
+	
+	/**
+	 * Release any resources allocated by <tt>loadSections()</tt>.
+	 */
+	protected void unloadSections() {
+		// Release memory allocated for this process
+		for (int i = 0; i < pageTable.length; i++) {
+			if (pageTable[i].valid) {
+				pageTable[i].valid = false;
+			}
+		}
+	}
 
 	private int argc, argv;
 
 	private static final int pageSize = Processor.pageSize;
 
 	private static final char dbgProcess = 'a';
+	
+	/** The maximum number of open files per process. */
+	private static final int maxFiles = 16;
+	
+	/** Next process ID to be assigned */
+	private static int nextProcessID = 0;
+	
+	/** Lock for protecting process ID assignment */
+	private static Lock processIDLock = new Lock();
+	
+	/** This process's identifier */
+	private int processID;
+	
+	/** Parent process, or null if this is the root process */
+	private UserProcess parent;
+	
+	/** Project 2 Task 1: Array to store open files */
+	private OpenFile[] myFileSlots;
+	
+	/** Map of child processes (PID -> UserProcess) */
+	private HashMap<Integer, UserProcess> childProcesses;
+	
+	/** Map of child process exit status values (PID -> exit status) */
+	private HashMap<Integer, Integer> childExitStatus;
+	
+	/** Lock for protecting child process operations */
+	private Lock childLock = new Lock();
+	
+	/** Condition for waiting on child process completion */
+	private Condition joinCondition = new Condition(childLock);
+	
+	/** Whether this process has exited */
+	private boolean exited = false;
 }

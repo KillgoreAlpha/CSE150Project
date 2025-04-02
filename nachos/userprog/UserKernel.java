@@ -29,6 +29,10 @@ public class UserKernel extends ThreadedKernel {
 				exceptionHandler();
 			}
 		});
+		
+		// Initialize process count
+		numProcesses = 0;
+		numProcessesLock = new Lock();
 	}
 
 	/**
@@ -121,6 +125,12 @@ public class UserKernel extends ThreadedKernel {
 
 	/** Globally accessible reference to the synchronized console. */
 	public static SynchConsole console;
+
+	/** Total number of running processes */
+	public static int numProcesses;
+	
+	/** Lock to protect access to numProcesses */
+	public static Lock numProcessesLock;
 
 	// dummy variables to make javac smarter
 	private static Coff dummy1 = null;
