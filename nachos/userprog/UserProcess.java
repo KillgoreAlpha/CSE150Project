@@ -28,6 +28,14 @@ public class UserProcess {
 		pageTable = new TranslationEntry[numPhysPages];
 		for (int i = 0; i < numPhysPages; i++)
 			pageTable[i] = new TranslationEntry(i, i, true, false, false, false);
+			
+		// Project 2 Task 1: Initialize OpenFiles array
+		myFileSlots = new OpenFile[16];
+		// Project 2 Task 1: Initialize stdin/stdout slots in OpenFiles array
+		// File descriptor 0 refers to keyboard input (UNIX stdin)
+		myFileSlots[0] = UserKernel.console.openForReading();
+		// File descriptor 1 refers to display output (UNIX stdout)
+		myFileSlots[1] = UserKernel.console.openForWriting();
 	}
 
 	/**
@@ -446,6 +454,8 @@ public class UserProcess {
 			return handleHalt();
 		case syscallExit:
 			return handleExit(a0);
+		case syscallCreate:
+			return handleCreate(a0);
 
 		default:
 			Lib.debug(dbgProcess, "Unknown syscall " + syscall);
@@ -454,6 +464,56 @@ public class UserProcess {
 		return 0;
 	}
 
+	/**
+	 * Handle the create() system call.
+	 * Attempt to open the named disk file, creating it if it does not exist,
+	 * and return a file descriptor that can be used to access the file.
+	 *
+	 * @param nameAddress  The virtual address of the file name string.
+	 * @return The file descriptor (index in myFileSlots), or -1 on error.
+	 */
+	private int handleCreate(int nameAddress) {
+		// Read the filename from the user's virtual memory
+		String filename = readVirtualMemoryString(nameAddress, 256);
+		
+		// Check if filename is valid
+		if (filename == null) {
+			Lib.debug(dbgProcess, "Create: Invalid filename pointer");
+			return -1;
+		}
+		
+		// Attempt to create/open the file
+		OpenFile file = ThreadedKernel.fileSystem.open(filename, true);
+		
+		// Check if file creation was successful
+		if (file == null) {
+			Lib.debug(dbgProcess, "Create: Could not create file " + filename);
+			return -1;
+		}
+		
+		// Find an available file descriptor
+		int fd = -1;
+		for (int i = 2; i < myFileSlots.length; i++) {
+			if (myFileSlots[i] == null) {
+				fd = i;
+				break;
+			}
+		}
+		
+		// Check if we found a file descriptor
+		if (fd == -1) {
+			Lib.debug(dbgProcess, "Create: No available file descriptors");
+			file.close();
+			return -1;
+		}
+		
+		// Store the file in our file descriptor table
+		myFileSlots[fd] = file;
+		Lib.debug(dbgProcess, "Create: Created file " + filename + " with fd " + fd);
+		
+		return fd;
+	}
+	
 	/**
 	 * Handle a user exception. Called by <tt>UserKernel.exceptionHandler()</tt>
 	 * . The <i>cause</i> argument identifies which exception occurred; see the
@@ -504,4 +564,7 @@ public class UserProcess {
 	private static final int pageSize = Processor.pageSize;
 
 	private static final char dbgProcess = 'a';
+	
+	/** Array to store file descriptors, maximum 16 files per process */
+	protected OpenFile[] myFileSlots;
 }
