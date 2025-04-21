@@ -458,6 +458,8 @@ public class UserProcess {
 			return handleCreate(a0);
 		case syscallOpen:
 			return handleOpen(a0);
+		case syscallUnlink:
+			return handleUnlink(a0);
 
 		default:
 			Lib.debug(dbgProcess, "Unknown syscall " + syscall);
@@ -593,6 +595,49 @@ public class UserProcess {
 		}
 	}
 
+	/**
+	 * Handle the unlink() system call.
+	 * Attempt to delete a file from the
+	 *
+	 * @param nameAddress  The virtual address of the file name string.
+	 * @return 0 on success, -1 on error.
+	 */
+	public int handleUnlink(int nameAddress){
+
+		// For clarity
+		int success = 0;
+		int fail = 1;
+
+		// Read the filename from the user's virtual memory
+		String filename = readVirtualMemoryString(nameAddress, 256);
+
+		// Check if filename is valid
+		if (filename == null) {
+			Lib.debug(dbgProcess, "Create: Invalid filename pointer");
+			return fail;
+		}
+
+		OpenFile file;
+		// Find a file in the current open files that matches the file name, then remove it
+		for(int i = 0; i < myFileSlots.length; i++){
+			file = myFileSlots[i];
+
+			if(file.getName().equals(filename)){
+				myFileSlots[i] = null; 						// Remove file from open files
+				boolean bl = ThreadedKernel.fileSystem.remove(filename); // Remove file from file system
+				if(bl) {
+					return success;
+				}
+
+				Lib.debug(dbgProcess, "Unlink: Removal of file " + filename + " failed");
+				return fail;
+			}
+		}
+
+		// If we make it through the loop, we have not found an open file with a matching name.
+		Lib.debug(dbgProcess, "Unlink: File" + filename + " not found in open files");
+		return fail;
+	}
 	/** The program being run by this process. */
 	protected Coff coff;
 
