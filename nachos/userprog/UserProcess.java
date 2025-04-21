@@ -470,17 +470,17 @@ public class UserProcess {
 		return 0;
 	}
 
-
 	private int read(int fd, int bufferVirtualAddress, int size) {
-		if (fd < 0 || fd >= myFileSlots.length || myFileSlots[fd] == null) return -1;
-		if (size < 0) return -1;
+		if (fd < 0 || myFileSlots[fd] == null|| fd >= myFileSlots.length || size < 0) return -1;
+
+
 		if (size == 0) return 0;
 		OpenFile file = myFileSlots[fd];
-		byte[] kernelBuffer = new byte[size];
-		int bytesRead = file.read(kernelBuffer, 0, size);
+		byte[] newBuffer = new byte[size];
+		int bytesRead = file.read(newBuffer, 0, size);
 		if (bytesRead <= 0) return bytesRead; 
 		
-		int copy = (writeVirtualMemory(bufferVirtualAddress, kernelBuffer, 0, bytesRead)); 
+		int copy = (writeVirtualMemory(bufferVirtualAddress, newBuffer, 0, bytesRead)); 
 
 
 		return copy;
