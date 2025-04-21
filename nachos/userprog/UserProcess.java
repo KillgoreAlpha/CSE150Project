@@ -458,6 +458,8 @@ public class UserProcess {
 			return handleCreate(a0);
 		case syscallOpen:
 			return handleOpen(a0);
+		case syscallRead:
+			return read(a0, a1, a2);
 		case syscallUnlink:
 			return handleUnlink(a0);
 
@@ -467,6 +469,23 @@ public class UserProcess {
 		}
 		return 0;
 	}
+
+
+	private int read(int fd, int bufferVirtualAddress, int size) {
+		if (fd < 0 || fd >= myFileSlots.length || myFileSlots[fd] == null) return -1;
+		if (size < 0) return -1;
+		if (size == 0) return 0;
+		OpenFile file = myFileSlots[fd];
+		byte[] kernelBuffer = new byte[size];
+		int bytesRead = file.read(kernelBuffer, 0, size);
+		if (bytesRead <= 0) return bytesRead; 
+		
+		int copy = (writeVirtualMemory(bufferVirtualAddress, kernelBuffer, 0, bytesRead)); 
+
+
+		return copy;
+	}
+
 
 	/**
 	 * Handle the create() system call.
