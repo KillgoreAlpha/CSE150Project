@@ -456,6 +456,8 @@ public class UserProcess {
 			return handleExit(a0);
 		case syscallCreate:
 			return handleCreate(a0);
+		case syscallOpen:
+			return handleOpen(a0);
 
 		default:
 			Lib.debug(dbgProcess, "Unknown syscall " + syscall);
@@ -510,6 +512,55 @@ public class UserProcess {
 		// Store the file in our file descriptor table
 		myFileSlots[fd] = file;
 		Lib.debug(dbgProcess, "Create: Created file " + filename + " with fd " + fd);
+		
+		return fd;
+	}
+	
+	/**
+	 * Handle the open() system call.
+	 * Attempt to open the named file and return a file descriptor.
+	 *
+	 * @param nameAddress  The virtual address of the file name string.
+	 * @return The file descriptor (index in myFileSlots), or -1 on error.
+	 */
+	private int handleOpen(int nameAddress) {
+		// Read the filename from the user's virtual memory
+		String filename = readVirtualMemoryString(nameAddress, 256);
+		
+		// Check if filename is valid
+		if (filename == null) {
+			Lib.debug(dbgProcess, "Open: Invalid filename pointer");
+			return -1;
+		}
+		
+		// Attempt to open the file (don't create if it doesn't exist)
+		OpenFile file = ThreadedKernel.fileSystem.open(filename, false);
+		
+		// Check if file opening was successful
+		if (file == null) {
+			Lib.debug(dbgProcess, "Open: Could not open file " + filename);
+			return -1;
+		}
+		
+		// Find an available file descriptor
+		int fd = -1;
+		for (int i = 2; i < myFileSlots.length; i++) {
+			if (myFileSlots[i] == null) {
+				fd = i;
+				break;
+			}
+		}
+		
+		// Check if we found a file descriptor
+		if (fd == -1) {
+			Lib.debug(dbgProcess, "Open: No available file descriptors");
+			file.close();
+			return -1;
+		}
+		
+		// Store the file in our file descriptor table
+		myFileSlots[fd] = file;
+		Lib.debug(dbgProcess, "Open: Opened file " + filename + " with fd " + fd);
 		
 		return fd;
 	}
