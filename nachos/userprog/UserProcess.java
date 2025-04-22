@@ -458,6 +458,12 @@ public class UserProcess {
 			return handleCreate(a0);
 		case syscallClose:
 			return handleClose(a0); // We only want the 1 argument which is assumed to be Slotnum.
+		case syscallOpen:
+			return handleOpen(a0);
+		case syscallRead:
+			return read(a0, a1, a2);
+		case syscallUnlink:
+			return handleUnlink(a0);
 
 		default:
 			Lib.debug(dbgProcess, "Unknown syscall " + syscall);
@@ -465,6 +471,23 @@ public class UserProcess {
 		}
 		return 0;
 	}
+
+	private int read(int fd, int bufferVirtualAddress, int size) {
+		if (fd < 0 || myFileSlots[fd] == null|| fd >= myFileSlots.length || size < 0) return -1;
+
+
+		if (size == 0) return 0;
+		OpenFile file = myFileSlots[fd];
+		byte[] newBuffer = new byte[size];
+		int bytesRead = file.read(newBuffer, 0, size);
+		if (bytesRead <= 0) return bytesRead; 
+		
+		int copy = (writeVirtualMemory(bufferVirtualAddress, newBuffer, 0, bytesRead)); 
+
+
+		return copy;
+	}
+
 
 	/**
 	 * Handle the create() system call.
@@ -512,6 +535,55 @@ public class UserProcess {
 		// Store the file in our file descriptor table
 		myFileSlots[fd] = file;
 		Lib.debug(dbgProcess, "Create: Created file " + filename + " with fd " + fd);
+		
+		return fd;
+	}
+	
+	/**
+	 * Handle the open() system call.
+	 * Attempt to open the named file and return a file descriptor.
+	 *
+	 * @param nameAddress  The virtual address of the file name string.
+	 * @return The file descriptor (index in myFileSlots), or -1 on error.
+	 */
+	private int handleOpen(int nameAddress) {
+		// Read the filename from the user's virtual memory
+		String filename = readVirtualMemoryString(nameAddress, 256);
+		
+		// Check if filename is valid
+		if (filename == null) {
+			Lib.debug(dbgProcess, "Open: Invalid filename pointer");
+			return -1;
+		}
+		
+		// Attempt to open the file (don't create if it doesn't exist)
+		OpenFile file = ThreadedKernel.fileSystem.open(filename, false);
+		
+		// Check if file opening was successful
+		if (file == null) {
+			Lib.debug(dbgProcess, "Open: Could not open file " + filename);
+			return -1;
+		}
+		
+		// Find an available file descriptor
+		int fd = -1;
+		for (int i = 2; i < myFileSlots.length; i++) {
+			if (myFileSlots[i] == null) {
+				fd = i;
+				break;
+			}
+		}
+		
+		// Check if we found a file descriptor
+		if (fd == -1) {
+			Lib.debug(dbgProcess, "Open: No available file descriptors");
+			file.close();
+			return -1;
+		}
+		
+		// Store the file in our file descriptor table
+		myFileSlots[fd] = file;
+		Lib.debug(dbgProcess, "Open: Opened file " + filename + " with fd " + fd);
 		
 		return fd;
 	}
@@ -567,6 +639,49 @@ public class UserProcess {
 	
 	}
 
+	/**
+	 * Handle the unlink() system call.
+	 * Attempt to delete a file from the
+	 *
+	 * @param nameAddress  The virtual address of the file name string.
+	 * @return 0 on success, -1 on error.
+	 */
+	public int handleUnlink(int nameAddress){
+
+		// For clarity
+		int success = 0;
+		int fail = 1;
+
+		// Read the filename from the user's virtual memory
+		String filename = readVirtualMemoryString(nameAddress, 256);
+
+		// Check if filename is valid
+		if (filename == null) {
+			Lib.debug(dbgProcess, "Create: Invalid filename pointer");
+			return fail;
+		}
+
+		OpenFile file;
+		// Find a file in the current open files that matches the file name, then remove it
+		for(int i = 0; i < myFileSlots.length; i++){
+			file = myFileSlots[i];
+
+			if(file.getName().equals(filename)){
+				myFileSlots[i] = null; 						// Remove file from open files
+				boolean bl = ThreadedKernel.fileSystem.remove(filename); // Remove file from file system
+				if(bl) {
+					return success;
+				}
+
+				Lib.debug(dbgProcess, "Unlink: Removal of file " + filename + " failed");
+				return fail;
+			}
+		}
+
+		// If we make it through the loop, we have not found an open file with a matching name.
+		Lib.debug(dbgProcess, "Unlink: File" + filename + " not found in open files");
+		return fail;
+	}
 	/** The program being run by this process. */
 	protected Coff coff;
 
