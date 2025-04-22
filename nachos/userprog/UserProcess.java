@@ -671,17 +671,21 @@ public class UserProcess {
 
 		// Check if filename is valid
 		if (filename == null) {
-			Lib.debug(dbgProcess, "Create: Invalid filename pointer");
+			Lib.debug(dbgProcess, "Unlink: Invalid filename pointer");
 			return fail;
 		}
 
-		OpenFile file;
 		// Find a file in the current open files that matches the file name, then remove it
 		for(int i = 0; i < myFileSlots.length; i++){
-			file = myFileSlots[i];
-
-			if(file.getName().equals(filename)){
-				myFileSlots[i] = null; 						// Remove file from open files
+			OpenFile file = myFileSlots[i];
+			
+			// Skip null entries
+			if (file == null) {
+				continue;
+			}
+			
+			if(file.getName() != null && file.getName().equals(filename)){
+				myFileSlots[i] = null; // Remove file from open files
 				boolean bl = ThreadedKernel.fileSystem.remove(filename); // Remove file from file system
 				if(bl) {
 					return success;
@@ -692,8 +696,13 @@ public class UserProcess {
 			}
 		}
 
-		// If we make it through the loop, we have not found an open file with a matching name.
-		Lib.debug(dbgProcess, "Unlink: File" + filename + " not found in open files");
+		// Try to remove the file even if we didn't find it in open files
+		boolean removed = ThreadedKernel.fileSystem.remove(filename);
+		if (removed) {
+			return success;
+		}
+
+		Lib.debug(dbgProcess, "Unlink: File " + filename + " could not be removed");
 		return fail;
 	}
 	/** The program being run by this process. */
