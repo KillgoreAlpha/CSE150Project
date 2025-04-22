@@ -475,7 +475,7 @@ public class UserProcess {
 		case syscallOpen:
 			return handleOpen(a0);
 		case syscallRead:
-			return read(a0, a1, a2);
+			return handleRead(a0, a1, a2);
 		case syscallUnlink:
 			return handleUnlink(a0);
 
@@ -486,7 +486,7 @@ public class UserProcess {
 		return 0;
 	}
 
-	private int read(int fd, int bufferVirtualAddress, int size) {
+	private int handleRead(int fd, int bufferVirtualAddress, int size) {
 		if (fd < 0 || myFileSlots[fd] == null|| fd >= myFileSlots.length || size < 0) return -1;
 
 
@@ -664,7 +664,7 @@ public class UserProcess {
 
 		// For clarity
 		int success = 0;
-		int fail = 1;
+		int fail = -1;
 
 		// Read the filename from the user's virtual memory
 		String filename = readVirtualMemoryString(nameAddress, 256);
