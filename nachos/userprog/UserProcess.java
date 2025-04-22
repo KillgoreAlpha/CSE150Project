@@ -382,6 +382,18 @@ public class UserProcess {
 		return 0;
 	}
 
+	private int handleWrite(int slotNum, int vaddr, int numBytes){
+		byte buff[] =  new byte[numBytes];
+		int byteLength = readVirtualMemory(vaddr, buff);	//for large memory need to use page sized buffers and do something with it, will add later probably
+		if (byteLength != numBytes) return -1;
+		OpenFile file = myFileSlots[slotNum];
+		if (file == null) return -1;
+		int bytesWritten = file.write(buff, 0, numBytes);
+		if (bytesWritten != numBytes) return -1;
+		return bytesWritten;
+	}
+
+
 	private static final int syscallHalt = 0, syscallExit = 1, syscallExec = 2,
 			syscallJoin = 3, syscallCreate = 4, syscallOpen = 5,
 			syscallRead = 6, syscallWrite = 7, syscallClose = 8,
@@ -456,6 +468,8 @@ public class UserProcess {
 			return handleExit(a0);
 		case syscallCreate:
 			return handleCreate(a0);
+		case syscallWrite:
+			return handleWrite(a0, a1, a2);
 		case syscallClose:
 			return handleClose(a0); // We only want the 1 argument which is assumed to be Slotnum.
 		case syscallOpen:
