@@ -456,6 +456,8 @@ public class UserProcess {
 			return handleExit(a0);
 		case syscallCreate:
 			return handleCreate(a0);
+		case syscallClose:
+			return handleClose(a0); // We only want the 1 argument which is assumed to be Slotnum.
 		case syscallOpen:
 			return handleOpen(a0);
 		case syscallRead:
@@ -612,6 +614,29 @@ public class UserProcess {
 					+ Processor.exceptionNames[cause]);
 			Lib.assertNotReached("Unexpected exception");
 		}
+	}
+
+	private int handleClose(int slotNum){
+		// here we are to check if the slot we got is even valid
+		if (slotNum < 0 || slotNum >= 16) {
+			return -1;
+		}
+	
+		// Now that we have a valid slot we can check, lets check the slot to see if
+		// it is open at that slot. (Potential error because all slots are not "filled with null" but we will see in testing)
+		if(myFileSlots[slotNum] == null){
+			Lib.debug(dbgProcess, "handleClose: slot " + slotNum + " is not in use, and therefore cannot be closed.");
+			return -1;
+		}
+	
+		// There is no need to check if its open because we can close a closed file. Thats fine.
+	
+		// now that we know the slot is valid and in use, we can close it.
+		OpenFile file = myFileSlots[slotNum];
+		file.close();
+		myFileSlots[slotNum] = null;
+		return 0;
+	
 	}
 
 	/**
