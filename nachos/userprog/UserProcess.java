@@ -383,15 +383,13 @@ public class UserProcess {
 	}
 
 	private int handleWrite(int slotNum, int vaddr, int numBytes){
-		int filePosition = 0; //get this index from somewhere else
 		byte buff[] =  new byte[numBytes];
 		int byteLength = readVirtualMemory(vaddr, buff);	//for large memory need to use page sized buffers and do something with it, will add later probably
 		if (byteLength != numBytes) return -1;
 		OpenFile file = myFileSlots[slotNum];
 		if (file == null) return -1;
-		int bytesWritten = file.write(filePosition, buff, 0, numBytes);
+		int bytesWritten = file.write(buff, 0, numBytes);
 		if (bytesWritten != numBytes) return -1;
-		filePosition += bytesWritten;
 		return bytesWritten;
 	}
 
