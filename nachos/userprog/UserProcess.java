@@ -28,6 +28,14 @@ public class UserProcess {
 		pageTable = new TranslationEntry[numPhysPages];
 		for (int i = 0; i < numPhysPages; i++)
 			pageTable[i] = new TranslationEntry(i, i, true, false, false, false);
+			
+		// Project 2 Task 1: Initialize OpenFiles array
+		myFileSlots = new OpenFile[16];
+		// Project 2 Task 1: Initialize stdin/stdout slots in OpenFiles array
+		// File descriptor 0 refers to keyboard input (UNIX stdin)
+		myFileSlots[0] = UserKernel.console.openForReading();
+		// File descriptor 1 refers to display output (UNIX stdout)
+		myFileSlots[1] = UserKernel.console.openForWriting();
 	}
 
 	/**
@@ -374,6 +382,18 @@ public class UserProcess {
 		return 0;
 	}
 
+	private int handleWrite(int slotNum, int vaddr, int numBytes){
+		byte buff[] =  new byte[numBytes];
+		int byteLength = readVirtualMemory(vaddr, buff);	//for large memory need to use page sized buffers and do something with it, will add later probably
+		if (byteLength != numBytes) return -1;
+		OpenFile file = myFileSlots[slotNum];
+		if (file == null) return -1;
+		int bytesWritten = file.write(buff, 0, numBytes);
+		if (bytesWritten != numBytes) return -1;
+		return bytesWritten;
+	}
+
+
 	private static final int syscallHalt = 0, syscallExit = 1, syscallExec = 2,
 			syscallJoin = 3, syscallCreate = 4, syscallOpen = 5,
 			syscallRead = 6, syscallWrite = 7, syscallClose = 8,
@@ -446,6 +466,18 @@ public class UserProcess {
 			return handleHalt();
 		case syscallExit:
 			return handleExit(a0);
+		case syscallCreate:
+			return handleCreate(a0);
+		case syscallWrite:
+			return handleWrite(a0, a1, a2);
+		case syscallClose:
+			return handleClose(a0); // We only want the 1 argument which is assumed to be Slotnum.
+		case syscallOpen:
+			return handleOpen(a0);
+		case syscallRead:
+			return handleRead(a0, a1, a2);
+		case syscallUnlink:
+			return handleUnlink(a0);
 
 		default:
 			Lib.debug(dbgProcess, "Unknown syscall " + syscall);
@@ -454,6 +486,122 @@ public class UserProcess {
 		return 0;
 	}
 
+	private int handleRead(int fd, int bufferVirtualAddress, int size) {
+		if (fd < 0 || myFileSlots[fd] == null|| fd >= myFileSlots.length || size < 0) return -1;
+
+
+		if (size == 0) return 0;
+		OpenFile file = myFileSlots[fd];
+		byte[] newBuffer = new byte[size];
+		int bytesRead = file.read(newBuffer, 0, size);
+		if (bytesRead <= 0) return bytesRead; 
+		
+		int copy = (writeVirtualMemory(bufferVirtualAddress, newBuffer, 0, bytesRead)); 
+
+
+		return copy;
+	}
+
+
+	/**
+	 * Handle the create() system call.
+	 * Attempt to open the named disk file, creating it if it does not exist,
+	 * and return a file descriptor that can be used to access the file.
+	 *
+	 * @param nameAddress  The virtual address of the file name string.
+	 * @return The file descriptor (index in myFileSlots), or -1 on error.
+	 */
+	private int handleCreate(int nameAddress) {
+		// Read the filename from the user's virtual memory
+		String filename = readVirtualMemoryString(nameAddress, 256);
+		
+		// Check if filename is valid
+		if (filename == null) {
+			Lib.debug(dbgProcess, "Create: Invalid filename pointer");
+			return -1;
+		}
+		
+		// Attempt to create/open the file
+		OpenFile file = ThreadedKernel.fileSystem.open(filename, true);
+		
+		// Check if file creation was successful
+		if (file == null) {
+			Lib.debug(dbgProcess, "Create: Could not create file " + filename);
+			return -1;
+		}
+		
+		// Find an available file descriptor
+		int fd = -1;
+		for (int i = 2; i < myFileSlots.length; i++) {
+			if (myFileSlots[i] == null) {
+				fd = i;
+				break;
+			}
+		}
+		
+		// Check if we found a file descriptor
+		if (fd == -1) {
+			Lib.debug(dbgProcess, "Create: No available file descriptors");
+			file.close();
+			return -1;
+		}
+		
+		// Store the file in our file descriptor table
+		myFileSlots[fd] = file;
+		Lib.debug(dbgProcess, "Create: Created file " + filename + " with fd " + fd);
+		
+		return fd;
+	}
+	
+	/**
+	 * Handle the open() system call.
+	 * Attempt to open the named file and return a file descriptor.
+	 *
+	 * @param nameAddress  The virtual address of the file name string.
+	 * @return The file descriptor (index in myFileSlots), or -1 on error.
+	 */
+	private int handleOpen(int nameAddress) {
+		// Read the filename from the user's virtual memory
+		String filename = readVirtualMemoryString(nameAddress, 256);
+		
+		// Check if filename is valid
+		if (filename == null) {
+			Lib.debug(dbgProcess, "Open: Invalid filename pointer");
+			return -1;
+		}
+		
+		// Attempt to open the file (don't create if it doesn't exist)
+		OpenFile file = ThreadedKernel.fileSystem.open(filename, false);
+		
+		// Check if file opening was successful
+		if (file == null) {
+			Lib.debug(dbgProcess, "Open: Could not open file " + filename);
+			return -1;
+		}
+		
+		// Find an available file descriptor
+		int fd = -1;
+		for (int i = 2; i < myFileSlots.length; i++) {
+			if (myFileSlots[i] == null) {
+				fd = i;
+				break;
+			}
+		}
+		
+		// Check if we found a file descriptor
+		if (fd == -1) {
+			Lib.debug(dbgProcess, "Open: No available file descriptors");
+			file.close();
+			return -1;
+		}
+		
+		// Store the file in our file descriptor table
+		myFileSlots[fd] = file;
+		Lib.debug(dbgProcess, "Open: Opened file " + filename + " with fd " + fd);
+		
+		return fd;
+	}
+	
 	/**
 	 * Handle a user exception. Called by <tt>UserKernel.exceptionHandler()</tt>
 	 * . The <i>cause</i> argument identifies which exception occurred; see the
@@ -482,6 +630,81 @@ public class UserProcess {
 		}
 	}
 
+	private int handleClose(int slotNum){
+		// here we are to check if the slot we got is even valid
+		if (slotNum < 0 || slotNum >= 16) {
+			return -1;
+		}
+	
+		// Now that we have a valid slot we can check, lets check the slot to see if
+		// it is open at that slot. (Potential error because all slots are not "filled with null" but we will see in testing)
+		if(myFileSlots[slotNum] == null){
+			Lib.debug(dbgProcess, "handleClose: slot " + slotNum + " is not in use, and therefore cannot be closed.");
+			return -1;
+		}
+	
+		// There is no need to check if its open because we can close a closed file. Thats fine.
+	
+		// now that we know the slot is valid and in use, we can close it.
+		OpenFile file = myFileSlots[slotNum];
+		file.close();
+		myFileSlots[slotNum] = null;
+		return 0;
+	
+	}
+
+	/**
+	 * Handle the unlink() system call.
+	 * Attempt to delete a file from the
+	 *
+	 * @param nameAddress  The virtual address of the file name string.
+	 * @return 0 on success, -1 on error.
+	 */
+	public int handleUnlink(int nameAddress){
+
+		// For clarity
+		int success = 0;
+		int fail = -1;
+
+		// Read the filename from the user's virtual memory
+		String filename = readVirtualMemoryString(nameAddress, 256);
+
+		// Check if filename is valid
+		if (filename == null) {
+			Lib.debug(dbgProcess, "Unlink: Invalid filename pointer");
+			return fail;
+		}
+
+		// Find a file in the current open files that matches the file name, then remove it
+		for(int i = 0; i < myFileSlots.length; i++){
+			OpenFile file = myFileSlots[i];
+			
+			// Skip null entries
+			if (file == null) {
+				continue;
+			}
+			
+			if(file.getName() != null && file.getName().equals(filename)){
+				myFileSlots[i] = null; // Remove file from open files
+				boolean bl = ThreadedKernel.fileSystem.remove(filename); // Remove file from file system
+				if(bl) {
+					return success;
+				}
+
+				Lib.debug(dbgProcess, "Unlink: Removal of file " + filename + " failed");
+				return fail;
+			}
+		}
+
+		// Try to remove the file even if we didn't find it in open files
+		boolean removed = ThreadedKernel.fileSystem.remove(filename);
+		if (removed) {
+			return success;
+		}
+
+		Lib.debug(dbgProcess, "Unlink: File " + filename + " could not be removed");
+		return fail;
+	}
 	/** The program being run by this process. */
 	protected Coff coff;
 
@@ -504,4 +727,7 @@ public class UserProcess {
 	private static final int pageSize = Processor.pageSize;
 
 	private static final char dbgProcess = 'a';
+	
+	/** Array to store file descriptors, maximum 16 files per process */
+	protected OpenFile[] myFileSlots;
 }
